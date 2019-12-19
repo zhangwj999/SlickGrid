@@ -8,6 +8,7 @@
  * All rights reserved.
  *
  * SlickGrid v2.2
+ * update by zhangwj，add fixed columns,fixed rows,rowspan datas
  *
  * NOTES:
  *     Cell/row DOM manipulations are done directly bypassing jQuery's DOM manipulation methods.
@@ -91,7 +92,7 @@ if (typeof Slick === "undefined") {
 
     var columnDefaults = {
       name: "",
-      resizable: true,
+      resizable: false,
       sortable: false,
       minWidth: 30,
       rerenderOnResize: false,
@@ -118,18 +119,18 @@ if (typeof Slick === "undefined") {
     var uid = "slickgrid_" + Math.round(1000000 * Math.random());
     var self = this;
     var $focusSink, $focusSink2;
-    var $headerScroller;
+    var $headerScroller,$leftHeaderScroller,$rightHeaderScroller,$headerScrollerPlaceHolder;
     var $headers;
     var $headerRow, $headerRowScroller, $headerRowSpacer;
     var $topPanelScroller;
     var $topPanel;
     var $viewport;
-    var $canvas;
+    var $canvas,$leftCanvas,$rightCanvas;
     var $style;
     var $boundAncestors;
     var stylesheet, columnCssRulesL, columnCssRulesR;
     var viewportH, viewportW;
-    var canvasWidth;
+    var canvasWidth,leftCanvasWidth,rightCanvasWidth;
     var viewportHasHScroll, viewportHasVScroll;
     var headerColumnWidthDiff = 0, headerColumnHeightDiff = 0, // border+padding
         cellWidthDiff = 0, cellHeightDiff = 0;
@@ -182,6 +183,20 @@ if (typeof Slick === "undefined") {
     var rowNodeFromLastMouseWheelEvent;  // this node must not be deleted while inertial scrolling
     var zombieRowNodeFromLastMouseWheelEvent;  // node that was hidden instead of getting deleted
 
+    // 多级表头相关设置与中间变量
+
+    // 表头深度，默认1级
+    var headerDeep = 1;
+    // 缓存每个表头的信息，宽度、高度、表头级别
+    // 按顺序存放，如三级表头，存放的是
+    // [Array<ColumnBoxInfo>, Array<ColumnBoxInfo>, Array<ColumnBoxInfo>]
+    // interface ColumnBoxInfo {
+    //    columnDef: {}, // 列定义
+    //    width: {}, // 宽
+    //    height: {}, // 高
+    //    level: {}, // 级别
+    // }
+    var columnBoxInfos = [];
 
     //////////////////////////////////////////////////////////////////////////////////////////////
     // Initialization
@@ -195,6 +210,10 @@ if (typeof Slick === "undefined") {
       // calculate these only once and share between grid instances
       maxSupportedCssHeight = maxSupportedCssHeight || getMaxSupportedCssHeight();
       scrollbarDimensions = scrollbarDimensions || measureScrollbar();
+      // 在部分场景下会计算出来width:0 height: 0，这里特别的处理了一下
+      if( options.scrollbarDimensions ){
+          scrollbarDimensions = options.scrollbarDimensions
+      }
 
       options = $.extend({}, defaults, options);
       validateAndEnforceOptions();
@@ -237,6 +256,13 @@ if (typeof Slick === "undefined") {
       $focusSink = $("<div tabIndex='0' hideFocus style='position:fixed;width:0;height:0;top:0;left:0;outline:0;'></div>").appendTo($container);
 
       $headerScroller = $("<div class='slick-header ui-state-default' style='overflow:hidden;position:relative;' />").appendTo($container);
+      if( options.leftColumn ){
+          $leftHeaderScroller = $("<div class='left-slick-header-columns' style='display:block;position:absolute;top:0;left:-1000px;z-index:9;' />").appendTo( $container );
+      }
+      if( options.rightColumn ){
+          $rightHeaderScroller = $("<div class='right-slick-header-columns' style='display:block;position:absolute;top:0;right:0;z-index:9;'/>").appendTo( $container );
+          $headerScrollerPlaceHolder = $("<div class='slick-header-columns-place-holder' style='display:block;position:absolute;top:0;right:0;z-index:8;width:17px;height:24px;background-color:" + ( options.placeHolderColor || '#000' ) + "'/>").appendTo( $container );
+      }
       $headers = $("<div class='slick-header-columns' style='left:-1000px' />").appendTo($headerScroller);
       $headers.width(getHeadersWidth());
 
@@ -266,6 +292,129 @@ if (typeof Slick === "undefined") {
 
       if (!options.explicitInitialization) {
         finishInitialization();
+      }
+    }
+
+    /**
+     * 根据传递的columns和options，初始化columnBoxInfos对象，用于后续的表头渲染
+     * - 要定义任意行的表头，需使用二维数组，一维数组实现不了或实现困难
+     * - 根据表头高度headerDeep，初始化columnBoxInfos的值
+     */
+    function initColumnBoxInfos() {
+      // 记录每一列被几个跨列的表头所声明
+      var columnDeepEnum = {};
+      // 记录每一列宽度
+      var columnWidthEnum = {};
+      // 记录每一列左侧POSITION位置
+      var columnLeftPosiEnum = {};
+      // 记录每一列右侧POSITION位置
+      var columnRightPosiEnum = {};
+      // 记录每一列的索引值
+      var columnIdxEnum = {};
+
+      // 表头跨列必须按照顺序来，不能隔行跨列
+      function isFiledVaildate(thRowSpanOption){
+        var field = thRowSpanOption.field;
+        var width = 0;
+        var idxArr = [];
+        for (var i = 0; i < field.length; i++) {
+          idxArr.push(columnIdxEnum[field[i]]);
+          width += columnWidthEnum[field[i]];
+        }
+        idxArr = idxArr.sort();
+        var begin = idxArr[0];
+        for (var i = 0; i < field.length; i++) {
+          // 保证被跨列是按照顺序+1来的
+          if (begin + i == idxArr[i]) {
+            continue;
+          } else {
+            return false;
+          }
+        }
+        // 记录跨列定义的首尾列的索引
+        thRowSpanOption.startIdx = begin;
+        thRowSpanOption.endIdx = idxArr[idxArr.length - 1];
+        thRowSpanOption.width = width;
+        return true;
+      }
+
+      if (options.thRowSpan) {
+        // 根据field缓存 列索引，列宽，被跨行数 信息
+        for (var i = 0; i < columns.length; i++) {
+          var field = columns[i].field
+          if (columnIdxEnum[field] != undefined) {
+            throw "多行表头不支持同一field对应多个列定义！当前出问题的field = " + field ;
+          }
+          columnIdxEnum[field] = i;
+          columnWidthEnum[field] = columns[i].width;
+          columnDeepEnum[field] = 1;
+        }
+
+        // 初始化每一列left css样式值
+        var leftPosi = 0;
+        for (var i = 0; i < columns.length; i++) {
+          var field = columns[i].field
+          columnLeftPosiEnum[field] = leftPosi;
+          leftPosi += columnWidthEnum[field];
+        }
+
+        // 初始化每一列right css样式值
+        var rightPosi = viewportHasVScroll ? scrollbarDimensions.width : 0;
+        for (var i = columns.length - 1; i >= 0; i--) {
+          var field = columns[i].field
+          columnRightPosiEnum[field] = rightPosi;
+          rightPosi += columnWidthEnum[field];
+        }
+
+        for (var i = 0; i < options.thRowSpan.length; i++) {
+          var rowSpans = options.thRowSpan[i];
+          for (var j = 0; j < rowSpans.length; j++) {
+            var thRowSpanOption = rowSpans[j];
+            // 标识当前对象是跨列定义
+            thRowSpanOption.isSpan = true;
+            if(!isFiledVaildate(thRowSpanOption)){
+              throw new Error('表头跨行thRowSpanOption定义异常，退出！错误的内容是：' + JSON.stringify(thRowSpanOption));
+            }
+            thRowSpanOption.id = 'thRowSpanId-' + Math.random()*50000;
+            for (var k = 0; k < thRowSpanOption.field.length; k++) {
+              var field = thRowSpanOption.field[k];
+              columnDeepEnum[field] += 1;
+            }
+          }
+        }
+
+        // 表头高度为二维数组长度加1
+        headerDeep = options.thRowSpan.length + 1;
+
+        // 组织columnBoxInfos数据
+        columnBoxInfos = [];
+        for (var i = 0; i < headerDeep; i++) {
+          if (i == 0) {
+            for (var idx = 0; idx < columns.length; idx++) {
+              var colDef = columns[idx];
+              var field = colDef.field;
+              // 被跨行定义了几次，顶部高度就增加几行
+              colDef.top = (columnDeepEnum[field] - 1) * options.headerRowHeight;
+              colDef.bottom = 0;
+              colDef.left = columnLeftPosiEnum[field];
+              colDef.right = columnRightPosiEnum[field];
+              columnBoxInfos.push(colDef);
+            }
+          } else {
+            var spanColumnDefs = options.thRowSpan[options.thRowSpan.length - i];
+            for (var idx = 0; idx < spanColumnDefs.length; idx++) {
+              var spanColumnDef = spanColumnDefs[idx];
+              // 还需要判断当前所跨列有没有被多行表头跨列定义所引用
+              spanColumnDef.top = (headerDeep - i - 1) * options.headerRowHeight;
+              spanColumnDef.bottom = i * options.headerRowHeight;
+              var leftField = columns[spanColumnDef.startIdx].field;
+              spanColumnDef.left = columnLeftPosiEnum[leftField];
+              var rightField = columns[spanColumnDef.endIdx].field;
+              spanColumnDef.right = columnRightPosiEnum[rightField];
+              columnBoxInfos.push(spanColumnDef);
+            }
+          }
+        }
       }
     }
 
@@ -299,6 +448,9 @@ if (typeof Slick === "undefined") {
         setupColumnSort();
         createCssRules();
         resizeCanvas();
+        if( options.rightColumn ){
+            $rightHeaderScroller.css( 'right', ( viewportHasVScroll ? scrollbarDimensions.width : 0 ) + 'px' )
+        }
         bindAncestorScrollEvents();
 
         $container
@@ -392,7 +544,7 @@ if (typeof Slick === "undefined") {
         headersWidth += width;
       }
       headersWidth += scrollbarDimensions.width;
-      return Math.max(headersWidth, viewportW) + 1000;
+      return Math.max(headersWidth, viewportW) + (options.thRowSpan ? 0 : 1000);
     }
 
     function getCanvasWidth() {
@@ -408,7 +560,6 @@ if (typeof Slick === "undefined") {
     function updateCanvasWidth(forceColumnWidthsUpdate) {
       var oldCanvasWidth = canvasWidth;
       canvasWidth = getCanvasWidth();
-
       if (canvasWidth != oldCanvasWidth) {
         $canvas.width(canvasWidth);
         $headerRow.width(canvasWidth);
@@ -522,6 +673,13 @@ if (typeof Slick === "undefined") {
       return $header && $header[0];
     }
 
+    /**
+     * TODO 重写此方法
+     * - 支持多行表头
+     * - 考虑左右固定列
+     * - 多行表头，最底层一行支持排序、筛选，每一行表头都支持扩展
+     * - 
+     */
     function createColumnHeaders() {
       function onMouseEnter() {
         $(this).addClass("ui-state-hover");
@@ -531,6 +689,7 @@ if (typeof Slick === "undefined") {
         $(this).removeClass("ui-state-hover");
       }
 
+      // 销毁原来的dom
       $headers.find(".slick-header-column")
         .each(function() {
           var columnDef = $(this).data("column");
@@ -544,6 +703,7 @@ if (typeof Slick === "undefined") {
       $headers.empty();
       $headers.width(getHeadersWidth());
 
+      // 表头合计行
       $headerRow.find(".slick-headerrow-column")
         .each(function() {
           var columnDef = $(this).data("column");
@@ -555,56 +715,169 @@ if (typeof Slick === "undefined") {
           }
         });
       $headerRow.empty();
-
-      for (var i = 0; i < columns.length; i++) {
-        var m = columns[i];
-
-        var header = $("<div class='ui-state-default slick-header-column' />")
-            .html("<span class='slick-column-name'>" + m.name + "</span>")
-            .width(m.width - headerColumnWidthDiff)
-            .attr("id", "" + uid + m.id)
-            .attr("title", m.toolTip || "")
-            .data("column", m)
-            .addClass(m.headerCssClass || "")
-            .appendTo($headers);
-
-        if (options.enableColumnReorder || m.sortable) {
-          header
-            .on('mouseenter', onMouseEnter)
-            .on('mouseleave', onMouseLeave);
-        }
-
-        if (m.sortable) {
-          header.addClass("slick-header-sortable");
-          header.append("<span class='slick-sort-indicator' />");
-        }
-
-        trigger(self.onHeaderCellRendered, {
-          "node": header[0],
-          "column": m
-        });
-
-        if (options.showHeaderRow) {
-          var headerRowCell = $("<div class='ui-state-default slick-headerrow-column l" + i + " r" + i + "'></div>")
-              .data("column", m)
-              .appendTo($headerRow);
-
-          trigger(self.onHeaderRowCellRendered, {
-            "node": headerRowCell[0],
-            "column": m
-          });
-        }
+      if( options.leftColumn ){
+          $leftHeaderScroller.empty()
+      }
+      if( options.rightColumn ){
+          $rightHeaderScroller.empty();
       }
 
-      setSortColumns(sortColumns);
-      setupColumnResize();
-      if (options.enableColumnReorder) {
-        setupColumnReorder();
+      // 处理多行表头
+      initColumnBoxInfos();
+
+      // 多行表头另外的处理逻辑
+      if (options.thRowSpan) {
+        // 用于判断每一个columnBoxInfo是否要clone到左侧或右侧固定列
+        var leftPosiEnd = 0;
+        var rightPosiEnd = viewportHasVScroll ? scrollbarDimensions.width : 0;
+        if (options.leftColumn) {
+          for (var i = 0; i < options.leftColumn; i++) {
+            leftPosiEnd += columns[i].width
+          }
+        }
+        if (options.rightColumn) {
+          var len = columns.length - 1;
+          for (var i = 0; i < options.rightColumn; i++) {
+            rightPosiEnd += columns[len - i].width
+          }
+        }
+
+        var headerHeight = (options.thRowSpan.length + 1) * options.headerRowHeight;
+        $headers
+          .css("left", 0)
+          // .css("width", ($headers.width() - 1000) + 'px') // 这1000px不知道用来做什么的
+          .height(headerHeight);
+        $leftHeaderScroller
+          .css("left", 0)
+          .height(headerHeight);
+        $rightHeaderScroller.height(headerHeight);
+        $headerScrollerPlaceHolder.height(headerHeight);
+        
+        // 渲染每一个表头的columnBoxInfo定义
+        for (var i = 0; i < columnBoxInfos.length; i++) {
+          var columnBoxInfo = columnBoxInfos[i];
+          
+          var header = $("<div class='ui-state-default slick-header-column slick-header-column-rowspan' />")
+            .html("<span class='slick-column-name-rowspan'>" + columnBoxInfo.name + "</span>")
+            .css("position", "absolute")
+            .css("left", columnBoxInfo.left + "px")
+            .css("right", columnBoxInfo.right + "px")
+            .css("top", columnBoxInfo.top + "px")
+            .css("bottom", columnBoxInfo.bottom + "px")
+            .css("line-height", (headerHeight - 8 - columnBoxInfo.top - columnBoxInfo.bottom) + "px")
+            .css("text-align", "center")
+            // .attr("id", "" + uid + m.id)
+            // .attr("title", m.toolTip || "")
+            .data("column", columnBoxInfo)
+            .addClass(columnBoxInfo.headerCssClass || "")
+            .appendTo($headers);
+
+          if (columnBoxInfo.sortable && columnBoxInfo.bottom == 0) {
+            header.addClass("slick-header-sortable");
+            header.append("<span class='slick-sort-indicator' />");
+          }
+
+          var leftHeader, rightHeader;
+
+          if( options.leftColumn && columnBoxInfo.left < leftPosiEnd  ){ // 是左固定列
+            leftHeader = header.clone()
+              .css("right", "auto")
+              .css("width", columnBoxInfo.width)
+              .css("box-sizing", "border-box")
+              .css("background-color", options.placeHolderColor || '#000')
+              .data("column", columnBoxInfo)
+              .appendTo( $leftHeaderScroller )
+          }
+          if( options.rightColumn && columnBoxInfo.right < rightPosiEnd ){ // 是右固定列
+            rightHeader = header.clone()
+              .css("left", "auto")
+              .css("right", (columnBoxInfo.right - (viewportHasVScroll ? scrollbarDimensions.width : 0)) + 'px' )
+              .css("width", columnBoxInfo.width)
+              .css("box-sizing", "border-box")
+              .css("background-color", options.placeHolderColor || '#000')
+              .data("column", columnBoxInfo)
+              .appendTo( $rightHeaderScroller )
+          }
+        }
+        setSortColumns(sortColumns);
+      } else {
+        // 渲染表头
+        for (var i = 0; i < columns.length; i++) {
+          var m = columns[i];
+
+          var header = $("<div class='ui-state-default slick-header-column' />")
+              .html("<span class='slick-column-name'>" + m.name + "</span>")
+              .width(m.width - headerColumnWidthDiff)
+              .attr("id", "" + uid + m.id)
+              .attr("title", m.toolTip || "")
+              .data("column", m)
+              .addClass(m.headerCssClass || "")
+              .appendTo($headers);
+
+          var leftHeader, rightHeader;
+          if( options.leftColumn && i < options.leftColumn ){ // 是左固定列
+              leftHeader = header.clone().appendTo( $leftHeaderScroller )
+          }
+          if( options.rightColumn && i >= columns.length - options.rightColumn ){
+              rightHeader = header.clone().css( 'left', '0' ).appendTo( $rightHeaderScroller )
+          }
+
+          if (options.enableColumnReorder || m.sortable) {
+            header
+              .on('mouseenter', onMouseEnter)
+              .on('mouseleave', onMouseLeave);
+            if( options.leftColumn && i < options.leftColumn ){ // 是左固定列
+                leftHeader
+                  .on('mouseenter', onMouseEnter)
+                  .on('mouseleave', onMouseLeave);
+            }
+            if( options.rightColumn && i >= columns.length - options.rightColumn ){
+                rightHeader
+                  .on('mouseenter', onMouseEnter)
+                  .on('mouseleave', onMouseLeave);
+            }
+          }
+
+          if (m.sortable) {
+            header.addClass("slick-header-sortable");
+            header.append("<span class='slick-sort-indicator' />");
+            if( options.leftColumn && i < options.leftColumn ){ // 是左固定列
+                leftHeader.addClass("slick-header-sortable");
+                leftHeader.append("<span class='slick-sort-indicator' />");
+            }
+            if( options.rightColumn && i >= columns.length - options.rightColumn ){
+                rightHeader.addClass("slick-header-sortable");
+                rightHeader.append("<span class='slick-sort-indicator' />");
+            }
+          }
+
+          trigger(self.onHeaderCellRendered, {
+            "node": header[0],
+            "column": m
+          });
+
+          if (options.showHeaderRow) {
+            var headerRowCell = $("<div class='ui-state-default slick-headerrow-column l" + i + " r" + i + "'></div>")
+                .data("column", m)
+                .appendTo($headerRow);
+
+            trigger(self.onHeaderRowCellRendered, {
+              "node": headerRowCell[0],
+              "column": m
+            });
+          }
+        }
+
+        setSortColumns(sortColumns);
+        setupColumnResize();
+        if (options.enableColumnReorder) {
+          setupColumnReorder();
+        }
       }
     }
 
     function setupColumnSort() {
-      $headers.click(function (e) {
+      ($headers.add($leftHeaderScroller).add($rightHeaderScroller)).click(function (e) {
         // temporary workaround for a bug in jQuery 1.7.1 (http://bugs.jquery.com/ticket/11328)
         e.metaKey = e.metaKey || e.ctrlKey;
 
@@ -1140,6 +1413,8 @@ if (typeof Slick === "undefined") {
       sortColumns = cols;
 
       var headerColumnEls = $headers.children();
+      var headerColumnElsLeft = $leftHeaderScroller.children();
+      var headerColumnElsRight = $rightHeaderScroller.children();
       headerColumnEls
           .removeClass("slick-header-column-sorted")
           .find(".slick-sort-indicator")
@@ -1151,7 +1426,18 @@ if (typeof Slick === "undefined") {
         }
         var columnIndex = getColumnIndex(col.columnId);
         if (columnIndex != null) {
-          headerColumnEls.eq(columnIndex)
+          var $headCol = headerColumnEls.eq(columnIndex);
+          var a = headerColumnElsLeft.eq(columnIndex);
+          if (!!a && a.length) {
+            $headCol = $headCol.add(a);
+          }
+
+          var b = headerColumnElsRight.eq(columnIndex);
+          if (!!b && b.length) {
+            $headCol = $headCol.add(b);
+          }
+
+          $headCol
               .addClass("slick-header-column-sorted")
               .find(".slick-sort-indicator")
                   .addClass(col.sortAsc ? "slick-sort-indicator-asc" : "slick-sort-indicator-desc");
@@ -1433,10 +1719,11 @@ if (typeof Slick === "undefined") {
         }
 
         // Do not render cells outside of the viewport.
-        if (columnPosRight[Math.min(ii - 1, i + colspan - 1)] > range.leftPx) {
-          if (columnPosLeft[i] > range.rightPx) {
+        if ( columnPosRight[Math.min(ii - 1, i + colspan - 1)] > range.leftPx || ( i <= options.leftColumn || i >= columns.length - options.rightColumn ) ) {
+          // 这里要修改一下逻辑，如果是固定列则固定要被渲染出来，要在将来使用
+          if ( columnPosLeft[i] > range.rightPx && !( i <= options.leftColumn || i >= columns.length - options.rightColumn ) ) {
             // All columns to the right are outside the range.
-            break;
+            continue;
           }
 
           appendCellHtml(stringArray, row, i, colspan, d);
@@ -1515,7 +1802,7 @@ if (typeof Slick === "undefined") {
       } else {
         $canvas[0].removeChild(cacheEntry.rowNode);
       }
-      
+
       delete rowsCache[row];
       delete postProcessedRows[row];
       renderedRows--;
@@ -1632,6 +1919,10 @@ if (typeof Slick === "undefined") {
       var oldViewportHasVScroll = viewportHasVScroll;
       // with autoHeight, we do not need to accommodate the vertical scroll bar
       viewportHasVScroll = !options.autoHeight && (numberOfRows * options.rowHeight > viewportH);
+
+      if (options.thRowSpan && viewportHasVScroll) {
+        createColumnHeaders()
+      }
 
       makeActiveCellNormal();
 
@@ -1814,8 +2105,8 @@ if (typeof Slick === "undefined") {
         // TODO:  shorten this loop (index? heuristics? binary search?)
         for (var i = 0, ii = columns.length; i < ii; i++) {
           // Cells to the right are outside the range.
-          if (columnPosLeft[i] > range.rightPx) {
-            break;
+          if (columnPosLeft[i] > range.rightPx && !( i <= options.leftColumn || i >= columns.length - options.rightColumn ) ) {
+            continue;
           }
 
           // Already rendered.
@@ -1833,7 +2124,7 @@ if (typeof Slick === "undefined") {
             }
           }
 
-          if (columnPosRight[Math.min(ii - 1, i + colspan - 1)] > range.leftPx) {
+          if ( columnPosRight[Math.min(ii - 1, i + colspan - 1)] > range.leftPx || ( i <= options.leftColumn || i >= columns.length - options.rightColumn ) ) {
             appendCellHtml(stringArray, row, i, colspan, d);
             cellsAdded++;
           }
@@ -1912,12 +2203,83 @@ if (typeof Slick === "undefined") {
       x.innerHTML = stringArray.join("");
 
       for (var i = 0, ii = rows.length; i < ii; i++) {
-        rowsCache[rows[i]].rowNode = parentNode.appendChild(x.firstChild);
+        rowsCache[rows[i]].rowNode = parentNode.appendChild( x.firstChild )
       }
+
+      adjustFixedColumnPositon()
 
       if (needToReselectCell) {
         activeCellNode = getCellNode(activeRow, activeCell);
       }
+    }
+
+    // 调整固定列位置
+    function adjustFixedColumnPositon(){
+        var rows = Object.keys(rowsCache)
+        for (var i = 0, ii = rows.length; i < ii; i++) {
+          var rowNodeT = rowsCache[rows[i]].rowNode
+          var fixedCellColor = options.fixedCellColor || $( rowNodeT ).css( 'background-color' )
+
+          // 增加左侧固定列，右侧固定列的逻辑 开始
+          var colsChildren = rowNodeT.children
+          var len = colsChildren.length
+          var leftColumnIdxEnum = {} // 计算最左列对应的colsChildren的索引
+          var leftPosi = 0
+          for( var m = 0; m < options.leftColumn || 0; m++ ){
+              if( leftColumnIdxEnum[m] == undefined ){
+                  for( var w = 0; w < len; w++ ){
+                      var clazzName = colsChildren[ w ].className
+                      if( clazzName.match( new RegExp( 'l' + m + '\\s', 'g' ) ) )
+                        leftColumnIdxEnum[m] = w
+                  }
+              }
+              if( leftColumnIdxEnum[m] != undefined ){
+                  var idxCol = leftColumnIdxEnum[m]
+                  // 每列都比前一列往右一个列的宽度
+                  if( m != 0 )
+                    leftPosi += columns[ m - 1 ].width
+                  var leftNodeT = colsChildren[idxCol]
+                  $( leftNodeT ).css( "left", ( leftPosi + scrollLeft ) + 'px' )
+                      .css( "z-index", "9" )
+                      .css( "background-color", fixedCellColor )
+                  $( leftNodeT ).css( "right", ( canvasWidth - leftPosi - columns[ m ].width - scrollLeft ) + 'px' )
+                      .css( "z-index", "9" )
+                      .css( "background-color", fixedCellColor )
+              }
+          }
+
+          var rightColumnIdxEnum = {} // 计算最右列对应的colsChildren的索引
+          for( var n = options.rightColumn || 0; n > 0 || 0; n-- ){
+              // 已经计算过的就不需要重新计算了，因为最后一列会变成l0等左侧的列
+              if( rightColumnIdxEnum[n] == undefined ){
+                  for( var w = 0; w < len; w++ ){
+                      var clazzName = colsChildren[ w ].className
+                      if( clazzName.match( new RegExp( 'l' + ( columns.length - n ) + '\\s', 'g' ) ) )
+                        rightColumnIdxEnum[n] = w
+                  }
+              }
+              if( rightColumnIdxEnum[n] != undefined ){
+                  var idxCol = rightColumnIdxEnum[n]
+                  var rightNodeT = colsChildren[ idxCol ]
+                  var fixColWidth = columns[ columns.length - 1].width // 固定列的宽度
+                  if( fixColWidth == 100 )
+                    debugger
+                  var left = ( Math.min( viewportW - fixColWidth + scrollLeft, canvasWidth - fixColWidth ) - ( viewportHasVScroll ? scrollbarDimensions.width : 0 ) )
+                  var right = ( Math.max( canvasWidth - viewportW - scrollLeft + ( viewportHasVScroll ? scrollbarDimensions.width : 0 ), 0 ) )
+                  if( left + right + fixColWidth != canvasWidth )
+                    // debugger
+                    left = canvasWidth - right - fixColWidth
+                  $( rightNodeT ).css( "left", left + 'px' )
+                      .css( "z-index", "9" )
+                      .css( "background-color", fixedCellColor )
+                  $( rightNodeT ).css( "right", right + 'px' )
+                      .css( "z-index", "9" )
+                      .css( "background-color", fixedCellColor )
+              }
+          }
+          // 增加左侧固定列，右侧固定列的逻辑 结束
+
+        }
     }
 
     function startPostProcessing() {
@@ -2025,6 +2387,8 @@ if (typeof Slick === "undefined") {
           trigger(self.onViewportChanged, {});
         }
       }
+
+      adjustFixedColumnPositon()
 
       trigger(self.onScroll, {scrollLeft: scrollLeft, scrollTop: scrollTop});
     }
@@ -2162,7 +2526,7 @@ if (typeof Slick === "undefined") {
           $canvas[0].removeChild(zombieRowNodeFromLastMouseWheelEvent);
           zombieRowNodeFromLastMouseWheelEvent = null;
         }
-        rowNodeFromLastMouseWheelEvent = rowNode;      
+        rowNodeFromLastMouseWheelEvent = rowNode;
       }
     }
 
@@ -2217,7 +2581,7 @@ if (typeof Slick === "undefined") {
             cancelEditAndSetFocus();
           } else if (e.which == 34) {
             navigatePageDown();
-            handled = true;           
+            handled = true;
           } else if (e.which == 33) {
             navigatePageUp();
             handled = true;
@@ -2774,7 +3138,7 @@ if (typeof Slick === "undefined") {
         var prevActivePosX = activePosX;
         while (cell <= activePosX) {
           if (canCellBeActive(row, cell)) {
-            prevCell = cell;  
+            prevCell = cell;
           }
           cell += getColspan(row, cell);
         }

@@ -49,7 +49,7 @@ classes should alter those!
   height: 5px;
   margin-left: 4px;
   margin-top: 6px;
-  float: left;
+  /* float: left; */
 }
 
 .slick-sort-indicator-desc {
@@ -154,4 +154,19 @@ classes should alter those!
   z-index: 10;
   position: absolute;
   border: 2px dashed black;
+}
+
+.slick-header-column-rowspan,.slick-header-column.slick-header-column-rowspan{
+  display: inline-block;
+  overflow: hidden;
+  -o-text-overflow: ellipsis;
+  text-overflow: ellipsis;
+  margin: 0;
+  padding: 4px;
+  box-sizing: border-box;
+  border-right: 1px solid silver;
+  border-left: 0px;
+  border-top: 0px;
+  height: auto;
+  border-bottom: 1px solid silver;
 }

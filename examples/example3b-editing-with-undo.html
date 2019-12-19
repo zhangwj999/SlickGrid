@@ -1,113 +1,175 @@
 <!DOCTYPE HTML>
 <html>
-<head>
-  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
-  <title>SlickGrid example 3: Editing</title>
-  <link rel="stylesheet" href="../slick.grid.css" type="text/css"/>
-  <link rel="stylesheet" href="../css/smoothness/jquery-ui-1.8.16.custom.css" type="text/css"/>
-  <link rel="stylesheet" href="examples.css" type="text/css"/>
-  <style>
-    .cell-title {
-      font-weight: bold;
-    }
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>SlickGrid example 3: Editing</title>
+    <link rel="stylesheet" href="../slick.grid.css" type="text/css"/>
+    <!-- <link rel="stylesheet" href="../css/smoothness/jquery-ui-1.8.16.custom.css" type="text/css"/> -->
+    <link rel="stylesheet" href="examples.css" type="text/css"/>
+    <style>
+.cell-title {
+  font-weight: bold;
+}
 
     .cell-effort-driven {
       text-align: center;
     }
-  </style>
-</head>
-<body>
-<div style="position:relative">
-  <div style="width:600px;">
-    <div id="myGrid" style="width:100%;height:500px;"></div>
-  </div>
+    </style>
+  </head>
+  <body>
+    <div style="position:relative">
+      <div style="width:1200px;">
+        <div id="myGrid" style="width:100%;height:500px;"></div>
+      </div>
 
-  <div class="options-panel">
-    <h2>Demonstrates:</h2>
-    <ul>
-      <li>Using "editCommandHandler" option to intercept edit commands and implement undo support</li>
-    </ul>
+      <div class="options-panel" style="left: 1400px;">
+        <h2>Demonstrates:</h2>
+        <ul>
+          <li>Using "editCommandHandler" option to intercept edit commands and implement undo support</li>
+        </ul>
 
-    <h2>Controls:</h2>
-    <button onclick="undo()"><img src="../images/arrow_undo.png" align="absmiddle"> Undo</button>
-      <h2>View Source:</h2>
-      <ul>
+        <h2>Controls:</h2>
+        <button onclick="undo()"><img src="../images/arrow_undo.png" align="absmiddle"> Undo</button>
+        <h2>View Source:</h2>
+        <ul>
           <li><A href="https://github.com/mleibman/SlickGrid/blob/gh-pages/examples/example3b-editing-with-undo.html" target="_sourcewindow"> View the source for this example on Github</a></li>
-      </ul>
-  </div>
-</div>
+        </ul>
+      </div>
+    </div>
 
-<script src="../lib/firebugx.js"></script>
+    <!-- <script src="../lib/firebugx.js"></script> -->
 
-<script src="../lib/jquery-1.7.min.js"></script>
-<script src="../lib/jquery-ui-1.8.16.custom.min.js"></script>
-<script src="../lib/jquery.event.drag-2.2.js"></script>
+    <script src="../lib/jquery-1.7.min.js"></script>
+    <script src="../lib/jquery-ui-1.8.16.custom.min.js"></script>
+    <script src="../lib/jquery.event.drag-2.2.js"></script>
 
-<script src="../slick.core.js"></script>
-<script src="../slick.formatters.js"></script>
-<script src="../slick.editors.js"></script>
-<script src="../slick.grid.js"></script>
+    <script src="../slick.core.js"></script>
+    <script src="../slick.formatters.js"></script>
+    <script src="../slick.editors.js"></script>
+    <script src="../slick.grid.js"></script>
 
-<script>
-  function requiredFieldValidator(value) {
-    if (value == null || value == undefined || !value.length) {
-      return {valid: false, msg: "This is a required field"};
-    } else {
-      return {valid: true, msg: null};
-    }
+    <script>
+      function requiredFieldValidator(value) {
+        if (value == null || value == undefined || !value.length) {
+          return {valid: false, msg: "This is a required field"};
+        } else {
+          return {valid: true, msg: null};
+        }
+      }
+
+var grid;
+var data = [];
+var columns = [
+  {id: "title", name: "Title", field: "title", width: 120, cssClass: "cell-title", editor: Slick.Editors.Text, validator: requiredFieldValidator, sortable: true},
+  {id: "desc", name: "Description", field: "description", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "desc1", name: "star", field: "description1", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "desc2", name: "job", field: "description2", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "desc3", name: "life", field: "description3", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "desc4", name: "sex", field: "description4", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "desc5", name: "money", field: "description5", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "desc6", name: "wise", field: "description6", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "desc7", name: "old", field: "description7", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "desc8", name: "young", field: "description8", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "desc9", name: "long", field: "description9", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "desc10", name: "future", field: "description10", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "desc11", name: "enjoy", field: "description11", width: 100, editor: Slick.Editors.LongText, sortable: true},
+  {id: "duration", name: "Duration", field: "duration", editor: Slick.Editors.Text, sortable: true},
+  {id: "%", name: "% Complete", field: "percentComplete", width: 80, resizable: false, formatter: Slick.Formatters.PercentCompleteBar, editor: Slick.Editors.PercentComplete, sortable: true},
+  {id: "start", name: "Start", field: "start", minWidth: 60, editor: Slick.Editors.Date},
+  {id: "finish", name: "Finish", field: "finish", minWidth: 60, editor: Slick.Editors.Date},
+  {id: "effort-driven", name: "Effort Driven", width: 80, minWidth: 20, maxWidth: 80, cssClass: "cell-effort-driven", field: "effortDriven", formatter: Slick.Formatters.Checkmark, editor: Slick.Editors.Checkbox}
+];
+
+var options = {
+  editable: true,
+  enableAddRow: false,
+  enableCellNavigation: true,
+  asyncEditorLoading: false,
+  autoEdit: false,
+  editCommandHandler: queueAndExecuteCommand,
+  leftColumn: 4,
+  rightColumn: 1,
+  thRowSpan: [
+    [
+      {
+        name: '合并行3', 
+        field: ['description4','description5','description6','description7']
+      },
+      {
+        name: '合并行', 
+        field: ['description','description1','description2']
+      },
+    ],
+    [
+      {
+        name: '合并行1', 
+        field: ['description4','description5']
+      },
+      {
+        name: '合并行2', 
+        field: ['description6','description7']
+      },
+    ],
+  ],
+  placeHolderColor: '#f5f4f4'
+};
+
+var commandQueue = [];
+
+function queueAndExecuteCommand(item, column, editCommand) {
+  commandQueue.push(editCommand);
+  editCommand.execute();
+}
+
+function undo() {
+  var command = commandQueue.pop();
+  if (command && Slick.GlobalEditorLock.cancelCurrentEdit()) {
+    command.undo();
+    grid.gotoCell(command.row, command.cell, false);
   }
+}
 
-  var grid;
-  var data = [];
-  var columns = [
-    {id: "title", name: "Title", field: "title", width: 120, cssClass: "cell-title", editor: Slick.Editors.Text, validator: requiredFieldValidator},
-    {id: "desc", name: "Description", field: "description", width: 100, editor: Slick.Editors.LongText},
-    {id: "duration", name: "Duration", field: "duration", editor: Slick.Editors.Text},
-    {id: "%", name: "% Complete", field: "percentComplete", width: 80, resizable: false, formatter: Slick.Formatters.PercentCompleteBar, editor: Slick.Editors.PercentComplete},
-    {id: "start", name: "Start", field: "start", minWidth: 60, editor: Slick.Editors.Date},
-    {id: "finish", name: "Finish", field: "finish", minWidth: 60, editor: Slick.Editors.Date},
-    {id: "effort-driven", name: "Effort Driven", width: 80, minWidth: 20, maxWidth: 80, cssClass: "cell-effort-driven", field: "effortDriven", formatter: Slick.Formatters.Checkmark, editor: Slick.Editors.Checkbox}
-  ];
+$(function () {
+  for (var i = 0; i < 200000; i++) {
+            var d = (data[i] = {});
 
-  var options = {
-    editable: true,
-    enableAddRow: false,
-    enableCellNavigation: true,
-    asyncEditorLoading: false,
-    autoEdit: false,
-    editCommandHandler: queueAndExecuteCommand
-  };
+            d["title"] = "Task " + i;
+            d["description"] = "This is a sample task description.\n  It can be multiline";
+            d["description1"] = "This is a sample task description.\n  It can be multiline";
+            d["description2"] = "This is a sample task description.\n  It can be multiline";
+            d["description3"] = "This is a sample task description.\n  It can be multiline";
+            d["description4"] = "This is a sample task description.\n  It can be multiline";
+            d["description5"] = "This is a sample task description.\n  It can be multiline";
+            d["description6"] = "This is a sample task description.\n  It can be multiline";
+            d["description7"] = "This is a sample task description.\n  It can be multiline";
+            d["description8"] = "This is a sample task description.\n  It can be multiline";
+            d["description9"] = "This is a sample task description.\n  It can be multiline";
+            d["description10"] = "This is a sample task description.\n  It can be multiline";
+            d["description11"] = "This is a sample task description.\n  It can be multiline";
+            d["duration"] = "5 days";
+            d["percentComplete"] = Math.round(Math.random() * 100);
+            d["start"] = "01/01/2009";
+            d["finish"] = "01/05/2009";
+            d["effortDriven"] = (i % 5 == 0);
+            }
 
-  var commandQueue = [];
+            grid = new Slick.Grid("#myGrid", data, columns, options);
 
-  function queueAndExecuteCommand(item, column, editCommand) {
-    commandQueue.push(editCommand);
-    editCommand.execute();
-  }
-
-  function undo() {
-    var command = commandQueue.pop();
-    if (command && Slick.GlobalEditorLock.cancelCurrentEdit()) {
-      command.undo();
-      grid.gotoCell(command.row, command.cell, false);
-    }
-  }
-
-  $(function () {
-    for (var i = 0; i < 500; i++) {
-      var d = (data[i] = {});
-
-      d["title"] = "Task " + i;
-      d["description"] = "This is a sample task description.\n  It can be multiline";
-      d["duration"] = "5 days";
-      d["percentComplete"] = Math.round(Math.random() * 100);
-      d["start"] = "01/01/2009";
-      d["finish"] = "01/05/2009";
-      d["effortDriven"] = (i % 5 == 0);
-    }
-
-    grid = new Slick.Grid("#myGrid", data, columns, options);
-  })
-</script>
-</body>
+            grid.onSort.subscribe(function (e, args) {
+            data.sort(function (dataRow1, dataRow2) {
+            var field = args.sortCol.field;
+            var sign = args.sortAsc ? 1 : -1;
+            var value1 = dataRow1[field], value2 = dataRow2[field];
+            var result = (value1 == value2 ? 0 : (value1 > value2 ? 1 : -1)) * sign;
+              if (result != 0) {
+                return result;
+              }
+              return 0;
+            });
+              grid.invalidate();
+              grid.render();
+            });
+})
+    </script>
+  </body>
 </html>

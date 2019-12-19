@@ -1,5 +1,12 @@
 # Welcome to SlickGrid
 
+## add the following features:
+- support left columns fixed
+- support right columns fixed
+- support multi-rows header
+- see examples/example3b-editing-with-undo.html
+
+
 Find documentation and examples in [the wiki](https://github.com/mleibman/SlickGrid/wiki).
 
 
