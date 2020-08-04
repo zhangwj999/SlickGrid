@@ -9,6 +9,32 @@
  *
  * SlickGrid v2.2
  * update by zhangwj，add fixed columns,fixed rows,rowspan datas
+ * options: 
+ *  // 这是个多维数组，第一行是第一个表头跨行的定义，第二行是第二个跨行的定义
+ *  thRowSpan: [
+ *    [
+ *      {
+ *        name: '合并行3', 
+ *        field: ['description4','description5','description6','description7']
+ *      },
+ *      {
+ *        name: '合并行', 
+ *        field: ['description','description1','description2']
+ *      },
+ *    ],
+ *    [
+ *      {
+ *        name: '合并行1', 
+ *        field: ['description4','description5']
+ *      },
+ *      {
+ *        name: '合并行2', 
+ *        field: ['description6','description7']
+ *      },
+ *    ],
+ *  ],
+ *  leftColumn: 3,
+ *  rightColumn: 3,
  *
  * NOTES:
  *     Cell/row DOM manipulations are done directly bypassing jQuery's DOM manipulation methods.
@@ -54,8 +80,12 @@ if (typeof Slick === "undefined") {
    * @param {Object}            options     Grid options.
    **/
   function SlickGrid(container, data, columns, options) {
+    // 表头一个单元格多
+    const HEADER_LINE_HEIGHT = 16;
+
     // settings
     var defaults = {
+      headerPadding: 8, // 表头单元格的上下padding之和
       explicitInitialization: false,
       rowHeight: 25,
       defaultColumnWidth: 80,
@@ -87,7 +117,9 @@ if (typeof Slick === "undefined") {
       multiColumnSort: false,
       defaultFormatter: defaultFormatter,
       forceSyncScrolling: false,
-      addNewRowCssClass: "new-row"
+      addNewRowCssClass: "new-row",
+      leftColumn: 0,
+      rightColumn: 0
     };
 
     var columnDefaults = {
@@ -418,6 +450,26 @@ if (typeof Slick === "undefined") {
       }
     }
 
+    /**
+     * 计算表头最后一行最多有几个br，设置行高，并设置css样式
+     */
+    function getMaxWrap() {
+
+      // 设置折叠行数
+      const setWrapNum = (d)=>{
+        let wrapNum = d.name.split(/\<br\s?\/?\>/).length;
+        d.wrapNum = wrapNum;
+        return wrapNum;
+      }
+
+      // 根据表格name，计算最多要折叠几行
+      let maxWrap = _(columns)
+        .map(setWrapNum)
+        .max()
+
+      return maxWrap;
+    }
+
     function finishInitialization() {
       if (!initialized) {
         initialized = true;
@@ -674,7 +726,7 @@ if (typeof Slick === "undefined") {
     }
 
     /**
-     * TODO 重写此方法
+     *  重写此方法
      * - 支持多行表头
      * - 考虑左右固定列
      * - 多行表头，最底层一行支持排序、筛选，每一行表头都支持扩展
@@ -725,6 +777,10 @@ if (typeof Slick === "undefined") {
       // 处理多行表头
       initColumnBoxInfos();
 
+      // 获取最后一行最多有几行字体
+      let maxWrap = getMaxWrap();
+      let lastRowHeightDiff = (maxWrap - 1) * HEADER_LINE_HEIGHT;
+
       // 多行表头另外的处理逻辑
       if (options.thRowSpan) {
         // 用于判断每一个columnBoxInfo是否要clone到左侧或右侧固定列
@@ -742,7 +798,7 @@ if (typeof Slick === "undefined") {
           }
         }
 
-        var headerHeight = (options.thRowSpan.length + 1) * options.headerRowHeight;
+        var headerHeight = (options.thRowSpan.length + 1) * options.headerRowHeight + lastRowHeightDiff;
         $headers
           .css("left", 0)
           // .css("width", ($headers.width() - 1000) + 'px') // 这1000px不知道用来做什么的
@@ -757,14 +813,24 @@ if (typeof Slick === "undefined") {
         for (var i = 0; i < columnBoxInfos.length; i++) {
           var columnBoxInfo = columnBoxInfos[i];
           
+          // 如果bottom为0，说明是最后一行，bottom还是0，不加lastRowHeightDiff
+          let lastRowHeightToAdd = columnBoxInfo.bottom > 0 ? lastRowHeightDiff : 0;
+
+          // 计算line-height属性，如果不是最后一行，默认是行高-padding
+          // 否则是最后一行 根据当前column的wrapNum计算行高
+          let lineHeight = headerHeight - options.headerPadding - columnBoxInfo.top - columnBoxInfo.bottom - lastRowHeightToAdd;
+          if (maxWrap > 1 && columnBoxInfo.bottom == 0) {
+            lineHeight = (headerHeight - options.headerPadding - columnBoxInfo.top - columnBoxInfo.bottom - lastRowHeightToAdd) / columnBoxInfo.wrapNum;
+          }
+
           var header = $("<div class='ui-state-default slick-header-column slick-header-column-rowspan' />")
             .html("<span class='slick-column-name-rowspan'>" + columnBoxInfo.name + "</span>")
             .css("position", "absolute")
             .css("left", columnBoxInfo.left + "px")
             .css("right", columnBoxInfo.right + "px")
             .css("top", columnBoxInfo.top + "px")
-            .css("bottom", columnBoxInfo.bottom + "px")
-            .css("line-height", (headerHeight - 8 - columnBoxInfo.top - columnBoxInfo.bottom) + "px")
+            .css("bottom", columnBoxInfo.bottom + lastRowHeightToAdd + "px")
+            .css("line-height", lineHeight + "px")
             .css("text-align", "center")
             // .attr("id", "" + uid + m.id)
             // .attr("title", m.toolTip || "")
@@ -808,11 +874,17 @@ if (typeof Slick === "undefined") {
           var header = $("<div class='ui-state-default slick-header-column' />")
               .html("<span class='slick-column-name'>" + m.name + "</span>")
               .width(m.width - headerColumnWidthDiff)
+              .css("height", options.headerRowHeight + lastRowHeightDiff - options.headerPadding + 'px')
               .attr("id", "" + uid + m.id)
               .attr("title", m.toolTip || "")
               .data("column", m)
               .addClass(m.headerCssClass || "")
               .appendTo($headers);
+
+          if (maxWrap > 1) {
+            lineHeight = (options.headerRowHeight + lastRowHeightDiff - options.headerPadding) / m.wrapNum;
+            header.css("line-height", lineHeight + "px");
+          }
 
           var leftHeader, rightHeader;
           if( options.leftColumn && i < options.leftColumn ){ // 是左固定列
@@ -1413,8 +1485,8 @@ if (typeof Slick === "undefined") {
       sortColumns = cols;
 
       var headerColumnEls = $headers.children();
-      var headerColumnElsLeft = $leftHeaderScroller.children();
-      var headerColumnElsRight = $rightHeaderScroller.children();
+      var headerColumnElsLeft = $leftHeaderScroller ? $leftHeaderScroller.children() : null;
+      var headerColumnElsRight = $rightHeaderScroller ? $rightHeaderScroller.children() : null;
       headerColumnEls
           .removeClass("slick-header-column-sorted")
           .find(".slick-sort-indicator")
@@ -1427,14 +1499,18 @@ if (typeof Slick === "undefined") {
         var columnIndex = getColumnIndex(col.columnId);
         if (columnIndex != null) {
           var $headCol = headerColumnEls.eq(columnIndex);
-          var a = headerColumnElsLeft.eq(columnIndex);
-          if (!!a && a.length) {
-            $headCol = $headCol.add(a);
+          if (headerColumnElsLeft) {
+            var a = headerColumnElsLeft.eq(columnIndex);
+            if (!!a && a.length) {
+              $headCol = $headCol.add(a);
+            }
           }
 
-          var b = headerColumnElsRight.eq(columnIndex);
-          if (!!b && b.length) {
-            $headCol = $headCol.add(b);
+          if (headerColumnElsRight) {
+            var b = headerColumnElsRight.eq(columnIndex);
+            if (!!b && b.length) {
+              $headCol = $headCol.add(b);
+            }
           }
 
           $headCol

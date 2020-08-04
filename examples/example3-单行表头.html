@@ -1,7 +1,7 @@
 <!DOCTYPE HTML>
 <html>
 <head>
-  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
   <title>SlickGrid example 3: Editing</title>
   <link rel="stylesheet" href="../slick.grid.css" type="text/css"/>
   <link rel="stylesheet" href="../css/smoothness/jquery-ui-1.8.16.custom.css" type="text/css"/>
@@ -41,6 +41,7 @@
   </div>
 </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.19/lodash.min.js"></script>
 <script src="../lib/firebugx.js"></script>
 
 <script src="../lib/jquery-1.7.min.js"></script>
@@ -68,7 +69,7 @@
   var data = [];
   var columns = [
     {id: "title", name: "Title", field: "title", width: 120, cssClass: "cell-title", editor: Slick.Editors.Text, validator: requiredFieldValidator},
-    {id: "desc", name: "Description", field: "description", width: 100, editor: Slick.Editors.LongText},
+    {id: "desc", name: "描述文字<br>比较长要换行", field: "description", width: 100, editor: Slick.Editors.LongText},
     {id: "duration", name: "Duration", field: "duration", editor: Slick.Editors.Text},
     {id: "%", name: "% Complete", field: "percentComplete", width: 80, resizable: false, formatter: Slick.Formatters.PercentCompleteBar, editor: Slick.Editors.PercentComplete},
     {id: "start", name: "Start", field: "start", minWidth: 60, editor: Slick.Editors.Date},
